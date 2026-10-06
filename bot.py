@@ -1,98 +1,144 @@
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import re
+import requests
 
-# এখানে BotFather থেকে পাওয়া আপনার নতুন বট টোকেন দিন
-TOKEN = '6905775685:AAFXrq64pmgYhL6Q-M2QNT_wTN-ynbLU5vI'
+# আপনার দেওয়া বটের টোকেন এবং গুগল শিটের ওয়েব অ্যাপ লিংক
+TOKEN = '6905775685:AAFXrq64pmgYhL6Q-M2QNT_wTN-ynbLU5vI' 
+WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwQ2mwI6-W15_NbfwaHwkAOvR7qcjm9hJGdCaZc90ppolYcmNEbBCtscsVOmaitb5NR/exec' 
+
 bot = telebot.TeleBot(TOKEN)
+temp_data = {}
 
-@bot.message_handler(commands=['start'])
+# গুগল শিটে সেভ করার বাটন
+def create_save_markup():
+    markup = InlineKeyboardMarkup()
+    btn_yes = InlineKeyboardButton("✅ শিটে সেভ করুন", callback_data="save_yes")
+    btn_no = InlineKeyboardButton("❌ বাতিল", callback_data="save_no")
+    markup.add(btn_yes, btn_no)
+    return markup
+
+# ১. আকর্ষণীয় ওয়েলকাম মেসেজ
+@bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    welcome_text = (
-        "👋 **স্বাগতম!**\n\n"
-        "আমি পাবলিক ও প্রাইভেট সব ধরণের চ্যানেল এবং গ্রুপের নাম, ইউজারনেম ও আইডি বের করতে পারি।\n\n"
-        "📌 **ব্যবহারের নিয়ম:**\n"
-        "1️⃣ **প্রাইভেট পোস্ট লিংক:** `https://t.me/c/1234567890/10` (একসাথে একাধিক পাঠাতে পারেন)\n"
-        "2️⃣ **পাবলিক ইউজারনেম/লিংক:** `@channel` বা `t.me/channel`\n"
-        "3️⃣ **পোস্ট ফরওয়ার্ড:** যেকোনো চ্যানেল/গ্রুপ থেকে বার্তা ফরওয়ার্ড করুন।"
+    welcome_msg = (
+        "🤖 **অ্যাডভান্সড টেলিগ্রাম আইডি এক্সট্রাক্টর বটে আপনাকে স্বাগতম!**\n\n"
+        "আমি খুব সহজেই যেকোনো টেলিগ্রাম চ্যানেল বা গ্রুপের নাম, ইউজারনেম এবং আইডি বের করে দিতে পারি। এরপর আপনি চাইলে সেই তথ্য সরাসরি আপনার **Google Sheet**-এ সেভ করতে পারবেন।\n\n"
+        "📌 **যেভাবে ব্যবহার করবেন:**\n"
+        "🔸 **লিংক দিন:** যেকোনো পাবলিক বা প্রাইভেট পোস্টের লিংক দিন।\n"
+        "   👉 *যেমন: `t.me/c/123456789/10` বা `t.me/username/10`*\n"
+        "🔸 **ইউজারনেম দিন:** যেকোনো চ্যানেলের ইউজারনেম লিখে পাঠান।\n"
+        "   👉 *যেমন: `@yourchannel`*\n"
+        "🔸 **ফরওয়ার্ড করুন:** যেকোনো চ্যানেল থেকে একটি মেসেজ বটের কাছে ফরওয়ার্ড করুন।\n\n"
+        "💡 *যেকোনো তথ্য পাঠানোর পর আমি আপনাকে একটি বাটন দেবো, সেখানে ক্লিক করলেই ডেটা সেভ হয়ে যাবে!*"
     )
-    bot.reply_to(message, welcome_text, parse_mode='Markdown')
+    bot.reply_to(message, welcome_msg, parse_mode='Markdown')
 
-# ১. ফরওয়ার্ড করা মেসেজ প্রসেস করা
+# ২. ফরওয়ার্ড করা মেসেজ হ্যান্ডেলার
 @bot.message_handler(func=lambda message: message.forward_from_chat is not None)
 def handle_forwarded_messages(message):
+    processing_msg = bot.reply_to(message, "⏳ *তথ্য খোঁজা হচ্ছে...*", parse_mode='Markdown')
+    
     try:
         chat = message.forward_from_chat
         title = chat.title if chat.title else "অজ্ঞাত নাম"
-        username = f"@{chat.username}" if chat.username else "❌ প্রাইভেট (No Username)"
+        username = f"@{chat.username}" if chat.username else "🔒 প্রাইভেট (No Username)"
         chat_id = chat.id
 
-        response = (
-            f"📌 **নাম:** {title}\n"
-            f"🔗 **ইউজারনেম:** {username}\n"
-            f"🆔 **আইডি:** `{chat_id}`"
-        )
-        bot.reply_to(message, response, parse_mode='Markdown')
+        response = f"✅ **সফলভাবে তথ্য পাওয়া গেছে!**\n\n📌 **নাম:** {title}\n🔗 **ইউজারনেম:** {username}\n🆔 **আইডি:** `{chat_id}`\n\n👇 *গুগল শিটে সেভ করতে নিচের বাটনে ক্লিক করুন:*"
+        
+        # প্রসেসিং মেসেজ এডিট করে রেজাল্ট বসানো
+        bot.edit_message_text(response, chat_id=message.chat.id, message_id=processing_msg.message_id, parse_mode='Markdown', reply_markup=create_save_markup())
+        
+        temp_data[processing_msg.message_id] = {"title": title, "username": username, "chat_id": str(chat_id)}
     except Exception:
-        bot.reply_to(message, "⚠️ মেসেজটি প্রসেস করতে সমস্যা হয়েছে।")
+        bot.edit_message_text("⚠️ **দুঃখিত!** মেসেজটি থেকে তথ্য বের করা সম্ভব হয়নি।", chat_id=message.chat.id, message_id=processing_msg.message_id, parse_mode='Markdown')
 
-# ২. লিংক বা ইউজারনেম থেকে আইডি ও নাম বের করা
-@bot.message_handler(func=lambda message: message.forward_from_chat is None, content_types=['text', 'photo', 'video', 'document', 'sticker'])
+# ৩. লিংক বা ইউজারনেম থেকে ডেটা বের করার হ্যান্ডেলার
+@bot.message_handler(func=lambda message: message.forward_from_chat is None, content_types=['text', 'photo', 'video'])
 def handle_text_or_links(message):
-    try:
-        text = message.text or message.caption
-        if not text:
-            bot.reply_to(message, "⚠️ অনুগ্রহ করে সঠিক লিংক, ইউজারনেম বা পোস্ট ফরওয়ার্ড করুন।")
-            return
+    text = message.text or message.caption
+    if not text:
+        return
 
-        response_text = "✅ **খুঁজে পাওয়া চ্যানেল/গ্রুপের বিস্তারিত তথ্য:**\n\n"
-        found = False
+    # প্রাইভেট এবং পাবলিক লিংক খোঁজার জন্য অ্যাডভান্সড রেগুলার এক্সপ্রেশন
+    private_ids = re.findall(r't\.me/c/(\d+)', text)
+    public_usernames = re.findall(r't\.me/(?!c/|joinchat/)([a-zA-Z0-9_]+)', text)
+    mentions = re.findall(r'@([a-zA-Z0-9_]+)', text)
+    
+    # সব ইউজারনেম একসাথে করা
+    all_public_targets = set(public_usernames + mentions)
 
-        # ক. প্রাইভেট পোস্ট লিংক প্রসেস করা (যেমন: t.me/c/1234567890/10)
-        private_channel_ids = re.findall(r't\.me/c/(\d+)', text)
-        for channel_num in set(private_channel_ids):
-            full_id = int(f"-100{channel_num}")
-            found = True
-            
+    if not private_ids and not all_public_targets:
+        if message.text.startswith('/'): return
+        bot.reply_to(message, "⚠️ **কোনো সঠিক লিংক বা ইউজারনেম পাওয়া যায়নি!**\nঅনুগ্রহ করে একটি সঠিক টেলিগ্রাম লিংক বা মেসেজ ফরওয়ার্ড করুন।", parse_mode='Markdown')
+        return
+
+    processing_msg = bot.reply_to(message, "⏳ *লিংক স্ক্যান করা হচ্ছে...*", parse_mode='Markdown')
+    found_any = False
+
+    # ক. প্রাইভেট লিংকের কাজ
+    for channel_num in set(private_ids):
+        full_id = int(f"-100{channel_num}")
+        try:
+            chat = bot.get_chat(full_id)
+            title = chat.title if chat.title else "অজ্ঞাত নাম"
+            uname = f"@{chat.username}" if chat.username else "🔒 প্রাইভেট"
+        except Exception:
+            title = "🔒 প্রাইভেট চ্যানেল (বট জয়েন নেই)"
+            uname = "নাই"
+        
+        response = f"✅ **তথ্য পাওয়া গেছে!**\n\n📌 **নাম:** {title}\n🔗 **ইউজারনেম:** {uname}\n🆔 **আইডি:** `{full_id}`"
+        bot.edit_message_text(response, chat_id=message.chat.id, message_id=processing_msg.message_id, parse_mode='Markdown', reply_markup=create_save_markup())
+        temp_data[processing_msg.message_id] = {"title": title, "username": uname, "chat_id": str(full_id)}
+        found_any = True
+        break # একসাথে একটি লিংকের জন্য কাজ করবে
+
+    # খ. পাবলিক লিংক বা ইউজারনেমের কাজ
+    if not found_any:
+        for uname in all_public_targets:
             try:
-                # বট যদি চ্যানেলে যুক্ত থাকে তবে নাম টেনে আনবে
-                chat = bot.get_chat(full_id)
+                chat = bot.get_chat(f"@{uname}")
                 title = chat.title if chat.title else "অজ্ঞাত নাম"
-                uname = f"@{chat.username}" if chat.username else "❌ প্রাইভেট (No Username)"
-                response_text += f"📌 **নাম:** {title}\n🔗 **ইউজারনেম:** {uname}\n🆔 **আইডি:** `{chat.id}`\n\n"
+                real_uname = f"@{chat.username}" if chat.username else f"@{uname}"
+                
+                response = f"✅ **তথ্য পাওয়া গেছে!**\n\n📌 **নাম:** {title}\n🔗 **ইউজারনেম:** {real_uname}\n🆔 **আইডি:** `{chat.id}`"
+                bot.edit_message_text(response, chat_id=message.chat.id, message_id=processing_msg.message_id, parse_mode='Markdown', reply_markup=create_save_markup())
+                temp_data[processing_msg.message_id] = {"title": title, "username": real_uname, "chat_id": str(chat.id)}
+                found_any = True
+                break
             except Exception:
-                # বট চ্যানেলে যুক্ত না থাকলে শুধু আইডি দেখাবে
-                response_text += f"🔒 **প্রাইভেট চ্যানেল/গ্রুপ**\n📌 **নাম:** ❌ বট এই চ্যানেলে জয়েন নেই (তাই নাম গোপন রয়েছে)\n🆔 **আইডি:** `{full_id}`\n\n"
-
-        # খ. পাবলিক ইউজারনেম ও লিংক প্রসেস করা
-        words = text.split()
-        for word in words:
-            if 't.me/c/' in word:
                 continue
 
-            clean_username = None
-            if word.startswith('@'):
-                clean_username = word
-            elif 't.me/' in word:
-                parts = word.split('t.me/')[-1].split('/')
-                if parts[0] and parts[0] != 'c':
-                    clean_username = '@' + parts[0]
+    if not found_any:
+        bot.edit_message_text("⚠️ **তথ্য পাওয়া যায়নি!**\nহয়তো চ্যানেলটি ডিলিট হয়ে গেছে অথবা ইউজারনেমটি ভুল।", chat_id=message.chat.id, message_id=processing_msg.message_id, parse_mode='Markdown')
 
-            if clean_username:
-                try:
-                    chat = bot.get_chat(clean_username)
-                    uname = f"@{chat.username}" if chat.username else "নাই"
-                    response_text += f"📌 **নাম:** {chat.title}\n🔗 **ইউজারনেম:** {uname}\n🆔 **আইডি:** `{chat.id}`\n\n"
-                    found = True
-                except Exception:
-                    response_text += f"❌ `{clean_username}`: তথ্য পাওয়া যায়নি।\n\n"
-
-        if not found:
-            bot.reply_to(message, "⚠️ কোনো সঠিক পোস্ট লিংক বা ইউজারনেম পাওয়া যায়নি।")
+# ৪. বাটন ক্লিকের অ্যাকশন (গুগল শিটে ডেটা পাঠানো)
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call):
+    msg_id = call.message.message_id
+    
+    if call.data == "save_yes":
+        if msg_id in temp_data:
+            data = temp_data[msg_id]
+            try:
+                bot.edit_message_reply_markup(call.message.chat.id, msg_id, reply_markup=None)
+                # গুগল শিটে রিকোয়েস্ট পাঠানো
+                requests.post(WEB_APP_URL, json=data)
+                
+                bot.answer_callback_query(call.id, "✅ গুগল শিটে সেভ হয়েছে!")
+                bot.send_message(call.message.chat.id, f"✔️ **সফলভাবে গুগল শিটে সেভ হয়েছে!**\n(নাম: {data['title']})", reply_to_message_id=msg_id, parse_mode='Markdown')
+                del temp_data[msg_id]
+            except Exception:
+                bot.answer_callback_query(call.id, "⚠️ শিটে সেভ হতে সমস্যা হয়েছে!", show_alert=True)
         else:
-            bot.reply_to(message, response_text, parse_mode='Markdown')
+            bot.answer_callback_query(call.id, "⚠️ ডেটা এক্সপায়ার হয়ে গেছে! আবার লিংক দিন।", show_alert=True)
 
-    except Exception:
-        bot.reply_to(message, "⚠️ প্রসেস করার সময় সমস্যা হয়েছে, সঠিক লিংক দিন।")
+    elif call.data == "save_no":
+        bot.answer_callback_query(call.id, "❌ বাতিল করা হয়েছে।")
+        bot.edit_message_reply_markup(call.message.chat.id, msg_id, reply_markup=None)
+        if msg_id in temp_data:
+            del temp_data[msg_id]
 
-print("বট সফলভাবে চালু হয়েছে...", flush=True)
+print("বটটি রকেটের গতিতে চালু হয়েছে! 🚀", flush=True)
 bot.infinity_polling(timeout=10, long_polling_timeout=5)
