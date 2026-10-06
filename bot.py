@@ -2,7 +2,7 @@ import telebot
 import re
 
 # এখানে BotFather থেকে পাওয়া আপনার নতুন বট টোকেন দিন
-TOKEN = '6905775685:AAGjZMkDZBtGBjqnRPkP8fFuqXbaI8rAg70'
+TOKEN = '6905775685:AAFXrq64pmgYhL6Q-M2QNT_wTN-ynbLU5vI'
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['start'])
